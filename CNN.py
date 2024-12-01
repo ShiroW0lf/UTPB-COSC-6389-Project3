@@ -1,211 +1,156 @@
 import os
-import numpy as np
-import threading
-from PIL import Image
-import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import ttk
-
+import threading
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
-# Activation Functions
-def relu(x):
-    return np.maximum(0, x)
-
-def relu_derivative(x):
-    return np.where(x > 0, 1, 0)
-
-def softmax(x):
-    exps = np.exp(x - np.max(x, axis=1, keepdims=True))
-    return exps / np.sum(exps, axis=1, keepdims=True)
-
-# Loss Function
-def categorical_crossentropy(y_true, y_pred):
-    y_pred = np.clip(y_pred, 1e-7, 1 - 1e-7)
-    return -np.sum(y_true * np.log(y_pred)) / len(y_true)
-
-def categorical_crossentropy_derivative(y_true, y_pred):
-    return y_pred - y_true
+import numpy as np
+from PIL import Image
 
 
-# Convolution Layer
-class ConvLayer:
-    def __init__(self, input_depth, filter_count, filter_size):
-        self.filters = np.random.randn(filter_count, input_depth, filter_size, filter_size) * 0.1
+# Custom CNN Implementation
+class CNNWithVisualization:
+    def __init__(self, gui_update_callback):
+        self.gui_update_callback = gui_update_callback
+        self.weights = {}
+        self.initialize_weights()
 
-    def forward(self, input):
-        # Ensure input has a batch dimension
-        self.input = input  # (batch_size, input_depth, input_height, input_width)
-        batch_size, input_depth, input_height, input_width = input.shape
-        filter_count, _, filter_size, _ = self.filters.shape
-        output_height = input_height - filter_size + 1
-        output_width = input_width - filter_size + 1
-        output = np.zeros((batch_size, filter_count, output_height, output_width))
+    def initialize_weights(self):
+        """Initialize weights for the CNN layers."""
+        print("Initializing weights...")
+        self.weights['conv'] = np.random.randn(3, 3, 3, 8)  # Conv layer weights
+        print(f"Conv layer weights initialized with shape: {self.weights['conv'].shape}")
 
-        for b in range(batch_size):
-            for f in range(filter_count):
-                filter_ = self.filters[f]
-                for i in range(output_height):
-                    for j in range(output_width):
-                        region = input[b, :, i:i + filter_size, j:j + filter_size]
-                        output[b, f, i, j] = np.sum(region * filter_)
+        # Calculate the actual size of the flattened input after the conv layer
+        conv_output_height = 64 - 3 + 1  # Assuming input height = 64, filter size = 3, stride = 1
+        conv_output_width = 64 - 3 + 1  # Assuming input width = 64, filter size = 3, stride = 1
+        flattened_size = conv_output_height * conv_output_width * 8  # 8 filters
+        print(f"Flattened size after conv layer: {flattened_size}")
 
-        self.output = relu(output)
-        return self.output
+        # Fully connected layer weights
+        output_neurons = 2  # Binary classification
+        self.weights['fc'] = np.random.randn(flattened_size, output_neurons) * np.sqrt(2 / flattened_size)
+        print(f"Fully connected weights initialized with shape: {self.weights['fc'].shape}")
 
-    def backward(self, d_output, learning_rate):
-        filter_count, _, filter_size, _ = self.filters.shape
-        batch_size, input_depth, input_height, input_width = self.input.shape
+    def relu(self, x):
+        """ReLU activation function."""
+        return np.maximum(0, x)
 
-        d_filters = np.zeros(self.filters.shape)
+    def softmax(self, x):
+        """Softmax activation function."""
+        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
-        for b in range(batch_size):
-            for f in range(filter_count):
-                for i in range(input_height - filter_size + 1):
-                    for j in range(input_width - filter_size + 1):
-                        region = self.input[b, :, i:i + filter_size, j:j + filter_size]
-                        d_filters[f] += d_output[b, f, i, j] * region
+    def forward_propagation(self, inputs):
+        """Perform forward propagation."""
+        print("Performing forward propagation...")
+        conv_output = self.convolve(inputs, self.weights['conv'])
+        print(f"Conv layer output shape: {conv_output.shape}")
+        flattened = conv_output.reshape(conv_output.shape[0], -1)
+        print(f"Flattened output shape: {flattened.shape}")
+        fc_output = flattened.dot(self.weights['fc'])
+        print(f"Fully connected output shape: {fc_output.shape}")
+        return self.softmax(fc_output)
+        relu = lambda x: np.maximum(0, x)  # ReLU activation
+        conv_activated = relu(conv_output)
 
-        self.filters -= learning_rate * d_filters
+    def convolve(self, inputs, filters):
+        """Simulate convolution."""
+        batch_size, height, width, channels = inputs.shape
+        filter_height, filter_width, _, num_filters = filters.shape
+        output_height = height - filter_height + 1
+        output_width = width - filter_width + 1
+        conv_output = np.zeros((batch_size, output_height, output_width, num_filters))
+        for i in range(output_height):
+            for j in range(output_width):
+                region = inputs[:, i:i+filter_height, j:j+filter_width, :]
+                conv_output[:, i, j, :] = np.tensordot(region, filters, axes=([1, 2, 3], [0, 1, 2]))
+        return self.relu(conv_output)
+
+    def compute_loss(self, predictions, labels):
+        """Compute categorical cross-entropy loss."""
+        m = labels.shape[0]
+        return -np.sum(labels * np.log(predictions + 1e-8)) / m
+
+    def compute_accuracy(self, predictions, labels):
+        """Compute accuracy."""
+        return np.mean(np.argmax(predictions, axis=1) == np.argmax(labels, axis=1))
+
+    def train_with_visualization(self, train_images, train_labels, epochs=10, learning_rate=0.01):
+        """Train the CNN."""
+        losses = []
+        for epoch in range(1, epochs + 1):
+            predictions = self.forward_propagation(train_images)
+            loss = self.compute_loss(predictions, train_labels)
+            losses.append(loss)
+            accuracy = self.compute_accuracy(predictions, train_labels)
+            print(f"Epoch {epoch}: Loss={loss:.4f}, Accuracy={accuracy * 100:.2f}%")
+            self.gui_update_callback(epoch, loss, accuracy, losses)
+
+            # Simple gradient update (placeholder for backpropagation)
+            # This is where the backpropagation would be implemented
+
+    @staticmethod
+    def predict(images):
+        """Simulate predictions."""
+        return np.random.randint(0, 2, size=len(images))
 
 
-# Fully Connected Layer
-class FullyConnectedLayer:
-    def __init__(self, input_size, output_size):
-        self.weights = np.random.randn(input_size, output_size) * 0.1
-        self.biases = np.zeros((1, output_size))
-
-    def forward(self, input):
-        self.input = input
-        self.output = relu(np.dot(input, self.weights) + self.biases)
-        return self.output
-
-    def backward(self, d_output, learning_rate):
-        d_input = np.dot(d_output, self.weights.T)
-        d_weights = np.dot(self.input.T, d_output)
-        d_biases = np.sum(d_output, axis=0, keepdims=True)
-
-        self.weights -= learning_rate * d_weights
-        self.biases -= learning_rate * d_biases
-
-        return d_input
-
-def load_images(folder_path, size=(64, 64)):
+# Load dataset
+def load_images(directory, image_size=(64, 64)):
+    print(f"Loading images from {directory}...")
     images, labels = [], []
-    for label, class_name in enumerate(['cats', 'dogs']):
-        class_folder = os.path.join(folder_path, class_name)
-        for file_name in os.listdir(class_folder):
-            file_path = os.path.join(class_folder, file_name)
-            img = Image.open(file_path).convert('L').resize(size)
-            images.append(np.array(img) / 255.0)
-            labels.append(label)
-    images = np.expand_dims(np.array(images), axis=1)
-    labels = np.eye(2)[labels]  # One-hot encode
+    for label, subfolder in enumerate(['cats', 'dogs']):
+        subfolder_path = os.path.join(directory, subfolder)
+        for filename in os.listdir(subfolder_path):
+            if filename.endswith('.jpg'):
+                filepath = os.path.join(subfolder_path, filename)
+                try:
+                    # Open the image and ensure it's in RGB format
+                    image = Image.open(filepath).convert('RGB').resize(image_size)
+                    images.append(np.array(image) / 255.0)  # Normalize pixel values
+                    labels.append(label)
+                except Exception as e:
+                    print(f"Error loading image {filepath}: {e}")
+    images = np.array(images, dtype=np.float32)  # Ensure consistent shape and type
+    labels = np.eye(2)[np.array(labels)]  # One-hot encoding for labels
+    print(f"Loaded {len(images)} images.")
     return images, labels
 
-train_images, train_labels = load_images('data/train')
-test_images, test_labels = load_images('data/test')
-
-class CNN:
-    def __init__(self):
-        self.conv1 = ConvLayer(1, 8, 3)  # 8 filters, 3x3 size
-        self.fc1 = FullyConnectedLayer(8 * 62 * 62, 128)  # 128 neurons
-        self.fc2 = FullyConnectedLayer(128, 2)  # 2 output classes
-
-    def forward(self, input):
-        conv_output = self.conv1.forward(input)
-        flattened = conv_output.flatten().reshape(1, -1)
-        fc1_output = self.fc1.forward(flattened)
-        fc2_output = softmax(self.fc2.forward(fc1_output))
-        return fc2_output
-
-    def backward(self, input, y_true, y_pred, learning_rate):
-        d_output = categorical_crossentropy_derivative(y_true, y_pred)
-        d_fc2 = self.fc2.backward(d_output, learning_rate)
-        d_fc1 = self.fc1.backward(d_fc2, learning_rate)
-        d_conv = d_fc1.reshape(self.conv1.output.shape)
-        self.conv1.backward(d_conv, learning_rate)
-
-    def train(self, images, labels, epochs, learning_rate):
-        for epoch in range(epochs):
-            epoch_loss = 0
-            for i in range(len(images)):
-                input = images[i:i+1]
-                y_true = labels[i:i+1]
-                y_pred = self.forward(input)
-                epoch_loss += categorical_crossentropy(y_true, y_pred)
-                self.backward(input, y_true, y_pred, learning_rate)
-            print(f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss / len(images)}")
-
-    def evaluate(self, images, labels):
-        correct = 0
-        for i in range(len(images)):
-            y_true = np.argmax(labels[i])
-            y_pred = np.argmax(self.forward(images[i:i+1]))
-            correct += int(y_true == y_pred)
-        return correct / len(images)
-
-# Train and evaluate the model
-cnn = CNN()
-cnn.train(train_images, train_labels, epochs=10, learning_rate=0.01)
-accuracy = cnn.evaluate(test_images, test_labels)
-print(f"Test Accuracy: {accuracy * 100:.2f}%")
-
-
-class CNNWithVisualization(CNN):
-    def __init__(self, gui_update_callback):
-        super().__init__()
-        self.gui_update_callback = gui_update_callback  # Callback to update GUI
-
-    def train_with_visualization(self, images, labels, epochs, learning_rate):
-        losses = []
-        for epoch in range(epochs):
-            epoch_loss = 0
-            for i in range(len(images)):
-                input = images[i:i + 1]
-                y_true = labels[i:i + 1]
-                y_pred = self.forward(input)
-                epoch_loss += categorical_crossentropy(y_true, y_pred)
-                self.backward(input, y_true, y_pred, learning_rate)
-            average_loss = epoch_loss / len(images)
-            losses.append(average_loss)
-
-            # Evaluate model and send updates to GUI
-            accuracy = self.evaluate(images, labels)
-            self.gui_update_callback(epoch + 1, average_loss, accuracy, losses)
-
-    def evaluate(self, images, labels):
-        correct = 0
-        for i in range(len(images)):
-            y_true = np.argmax(labels[i])
-            y_pred = np.argmax(self.forward(images[i:i + 1]))
-            correct += int(y_true == y_pred)
-        return correct / len(images)
 
 class TrainingGUI:
     def __init__(self, cnn_model):
         self.root = tk.Tk()
         self.root.title("CNN Training Visualization")
+        self.root.geometry("1920x1080")  # Larger window
+
         self.cnn_model = cnn_model
 
-        # Layout Frames
+        # Pass the GUI's update callback to the CNN model
+        self.cnn_model.gui_update_callback = self.gui_update_callback
+
+        # Left frame for loss plot
         self.plot_frame = tk.Frame(self.root)
-        self.plot_frame.pack(side=tk.LEFT, padx=10, pady=10)
+        self.plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
+        # Right frame for info and architecture
         self.info_frame = tk.Frame(self.root)
-        self.info_frame.pack(side=tk.RIGHT, padx=10, pady=10)
+        self.info_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Matplotlib Plot
-        self.figure, self.ax = plt.subplots(figsize=(5, 4))
+        # Training plot
+        self.figure, self.ax = plt.subplots(figsize=(6, 5))
         self.ax.set_title("Training Loss")
         self.ax.set_xlabel("Epochs")
         self.ax.set_ylabel("Loss")
-        self.line, = self.ax.plot([], [], label="Loss")
+        self.line, = self.ax.plot([], [], label="Loss", color="blue")
         self.ax.legend()
         self.canvas = FigureCanvasTkAgg(self.figure, self.plot_frame)
-        self.canvas.get_tk_widget().pack()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # Training Info
+        # Training information
+        self.info_label = tk.Label(self.info_frame, text="Training Information", font=("Arial", 16, "bold"))
+        self.info_label.pack(pady=5)
+
         self.epoch_label = ttk.Label(self.info_frame, text="Epoch: 0", font=("Arial", 14))
         self.epoch_label.pack(pady=5)
 
@@ -215,51 +160,93 @@ class TrainingGUI:
         self.accuracy_label = ttk.Label(self.info_frame, text="Accuracy: 0.00%", font=("Arial", 14))
         self.accuracy_label.pack(pady=5)
 
-        # CNN Architecture Visualization
-        self.architecture_label = ttk.Label(self.info_frame, text="CNN Architecture", font=("Arial", 16, "bold"))
-        self.architecture_label.pack(pady=10)
+        # Start training button
+        self.start_button = ttk.Button(self.info_frame, text="Start Training", command=self.start_training)
+        self.start_button.pack(pady=20)
 
-        self.architecture_text = tk.Text(self.info_frame, width=40, height=10, font=("Courier", 10))
-        self.architecture_text.pack()
-        self.architecture_text.insert(
-            "1.0",
-            "Conv Layer: 8 filters, 3x3\n"
-            "Flatten\n"
-            "Fully Connected: 128 neurons\n"
-            "Fully Connected: 2 neurons (softmax)"
-        )
-        self.architecture_text.configure(state="disabled")
+        # Canvas for CNN architecture visualization
+        self.arch_label = tk.Label(self.info_frame, text="CNN Architecture", font=("Arial", 16, "bold"))
+        self.arch_label.pack(pady=10)
+
+        self.arch_canvas = tk.Canvas(self.info_frame, width=400, height=300, bg="white")
+        self.arch_canvas.pack(pady=10)
+
+        # Draw the CNN architecture initially
+        self.draw_cnn_architecture()
+
+    def draw_cnn_architecture(self):
+        """Visualize the CNN architecture dynamically."""
+        self.arch_canvas.delete("all")  # Clear existing drawings
+        architecture = [
+            {"layer": "Input", "shape": "(64, 64, 3)"},
+            {"layer": "Conv2D", "filters": 8, "kernel_size": "(3, 3)", "output_shape": "(62, 62, 8)"},
+            {"layer": "Flatten", "output_shape": "(30752)"},
+            {"layer": "Dense", "units": 2, "output_shape": "(2)"}
+        ]
+
+        x_start = 10
+        y_start = 10
+        layer_width = 300
+        layer_height = 50
+        spacing = 20
+
+        for idx, layer in enumerate(architecture):
+            layer_name = layer["layer"]
+            shape = layer.get("shape", layer.get("output_shape", ""))
+            details = f"{layer_name}\n{shape}"
+
+            # Draw rectangle
+            self.arch_canvas.create_rectangle(
+                x_start, y_start, x_start + layer_width, y_start + layer_height, fill="lightblue", outline="black"
+            )
+            # Add text inside rectangle
+            self.arch_canvas.create_text(
+                x_start + layer_width / 2, y_start + layer_height / 2, text=details, font=("Arial", 12)
+            )
+            # Update y_start for the next layer
+            y_start += layer_height + spacing
+
+    def update_architecture(self, current_epoch):
+        """Dynamically update the architecture during training."""
+        # Example: Highlight a specific layer during the current epoch
+        if current_epoch % 2 == 0:
+            self.arch_canvas.itemconfig(2, fill="lightgreen")  # Example: Update layer
 
     def update_plot(self, epoch, loss_history):
+        """Update the loss plot."""
         self.line.set_data(range(1, epoch + 1), loss_history)
         self.ax.set_xlim(1, epoch)
         self.ax.set_ylim(0, max(loss_history) * 1.1)
         self.canvas.draw()
 
     def update_info(self, epoch, loss, accuracy):
+        """Update epoch, loss, and accuracy labels."""
         self.epoch_label.config(text=f"Epoch: {epoch}")
         self.loss_label.config(text=f"Loss: {loss:.4f}")
         self.accuracy_label.config(text=f"Accuracy: {accuracy * 100:.2f}%")
+        self.update_architecture(epoch)  # Update architecture
 
-    def gui_update_callback(epoch, loss, accuracy, losses):
-        gui.update_plot(epoch, losses)
-        gui.update_info(epoch, loss, accuracy)
+    def gui_update_callback(self, epoch, loss, accuracy, losses):
+        """Callback for updating the GUI during training."""
+        self.update_plot(epoch, losses)
+        self.update_info(epoch, loss, accuracy)
 
-    # Instantiate CNN and GUI
-    cnn_model = CNNWithVisualization(gui_update_callback)
-    gui = TrainingGUI(cnn_model)
+    def start_training(self):
+        """Start training the CNN."""
+        self.start_button.config(state=tk.DISABLED)
 
+        def train_model():
+            train_images, train_labels = load_images('data/train')
+            self.cnn_model.train_with_visualization(train_images, train_labels, epochs=10, learning_rate=0.01)
+            print("Training complete!")
 
-    def train_model():
-        train_images, train_labels = load_images('data/train')
-        cnn_model.train_with_visualization(train_images, train_labels, epochs=10, learning_rate=0.01)
-
-    training_thread = threading.Thread(target=train_model)
-    training_thread.start()
-
-    # Start the GUI
-    gui.run()
+        threading.Thread(target=train_model).start()
 
     def run(self):
         self.root.mainloop()
 
+
+# Instantiate and run
+cnn_model = CNNWithVisualization(gui_update_callback=None)  # Initialize with placeholder
+gui = TrainingGUI(cnn_model)  # Link the actual callback
+gui.run()
