@@ -28,7 +28,7 @@ class CNNWithVisualization:
     def initialize_weights(self):
         """Initialize weights for the CNN layers."""
         print("Initializing weights...")
-        self.weights['conv'] = np.random.randn(3, 3, 3, 8) * np.sqrt(2 / 27)  # He initialization
+        self.weights['conv'] = np.random.randn(3, 3, 3, 8) * np.sqrt(2 / (3 * 3 * 3))
         print(f"Conv layer weights initialized with shape: {self.weights['conv'].shape}")
 
         # Calculate the actual size of the flattened input after the conv layer
@@ -58,10 +58,23 @@ class CNNWithVisualization:
     def forward_propagation(self, inputs):
         """Perform forward propagation."""
         self.inputs = inputs
+
+        # Convolutional layer operation
         self.conv_output = self.convolve(inputs, self.weights['conv'])
+        print(f"Conv output shape: {self.conv_output.shape}")
+
+        # Flatten the convolutional output
         self.flattened = self.conv_output.reshape(self.conv_output.shape[0], -1)
+        print(f"Flattened shape: {self.flattened.shape}")
+
+        # Fully connected layer operation
         self.fc_output = self.flattened.dot(self.weights['fc'])
+        print(f"Fully connected output shape: {self.fc_output.shape}")
+
+        # Softmax activation for predictions
         self.predictions = self.softmax(self.fc_output)
+        print(f"Predictions shape: {self.predictions.shape}")
+
         return self.predictions
 
     def convolve(self, inputs, filters):
@@ -86,42 +99,76 @@ class CNNWithVisualization:
         """Compute accuracy."""
         return np.mean(np.argmax(predictions, axis=1) == np.argmax(labels, axis=1))
 
-    def backward_propagation(self, train_labels, learning_rate):
-        """Perform backward propagation and update weights."""
-        m = train_labels.shape[0]
+    def backward_propagation(self, inputs, labels, predictions, learning_rate):
+        """Compute and return gradients for backpropagation."""
+        batch_size = labels.shape[0]
 
-        # Fully connected layer gradient
-        d_fc_output = self.predictions - train_labels
-        d_fc_weights = self.flattened.T.dot(d_fc_output) / m
-        self.weights['fc'] -= learning_rate * d_fc_weights
+        # Compute gradients for fully connected layer
+        d_fc_output = predictions - labels  # Softmax derivative wrt loss
+        d_fc_weights = self.flattened.T.dot(d_fc_output) / batch_size
 
-        # Gradient for the conv layer
+        # Compute gradients for convolutional layer
         d_flattened = d_fc_output.dot(self.weights['fc'].T).reshape(self.conv_output.shape)
         d_conv_output = d_flattened * self.relu_derivative(self.conv_output)
 
         d_conv_weights = np.zeros_like(self.weights['conv'])
         for i in range(d_conv_output.shape[1]):
             for j in range(d_conv_output.shape[2]):
-                region = self.inputs[:, i:i+3, j:j+3, :]
+                region = self.inputs[:, i:i + 3, j:j + 3, :]
                 for k in range(d_conv_output.shape[3]):
-                    d_conv_weights[..., k] += np.tensordot(region, d_conv_output[:, i, j, k], axes=([0], [0])) / m
+                    d_conv_weights[..., k] += np.tensordot(region, d_conv_output[:, i, j, k],
+                                                           axes=([0], [0])) / batch_size
 
-        self.weights['conv'] -= learning_rate * d_conv_weights
+        return {"conv": d_conv_weights, "fc": d_fc_weights}
 
-    def train_with_visualization(self, train_images, train_labels, epochs=10, learning_rate=0.01, gui_update_callback=None):
+    def compute_gradients(self, inputs, labels, predictions):
+        """Compute gradients for backpropagation."""
+        batch_size = inputs.shape[0]
+
+        # Gradients for the fully connected layer
+        dL_dsoftmax = predictions - labels  # Softmax derivative
+        flattened = self.convolve(inputs, self.weights['conv']).reshape(inputs.shape[0], -1)
+        dL_dW_fc = flattened.T.dot(dL_dsoftmax) / batch_size
+
+        # Gradients for the convolutional layer
+        dL_dflatten = dL_dsoftmax.dot(self.weights['fc'].T).reshape(inputs.shape[0], 62, 62, 8)
+        dL_dconv = np.zeros_like(self.weights['conv'])
+
+        for i in range(62):
+            for j in range(62):
+                region = inputs[:, i:i + 3, j:j + 3, :]
+                for k in range(8):  # Number of filters
+                    dL_dconv[:, :, :, k] += np.tensordot(region, dL_dflatten[:, i, j, k], axes=([0], [0]))
+
+        return {"conv": dL_dconv, "fc": dL_dW_fc}
+
+    def train_with_visualization(self, train_images, train_labels, epochs=10, learning_rate=0.01,
+                                 gui_update_callback=None):
         """Train the CNN."""
         losses = []
         for epoch in range(1, epochs + 1):
+            # Forward propagation
             predictions = self.forward_propagation(train_images)
+
+            # Compute loss and accuracy
             loss = self.compute_loss(predictions, train_labels)
             losses.append(loss)
             accuracy = self.compute_accuracy(predictions, train_labels)
             print(f"Epoch {epoch}: Loss={loss:.4f}, Accuracy={accuracy * 100:.2f}%")
+
+            # GUI update callback
             if gui_update_callback:
                 gui_update_callback(epoch, loss, accuracy, losses)
 
             # Backpropagation and weight updates
-            self.backward_propagation(train_labels, learning_rate)
+            gradients = self.backward_propagation(train_images, train_labels, predictions, learning_rate)
+            if gradients is None:
+                raise ValueError("backward_propagation returned None. Check implementation.")
+            self.weights['conv'] -= learning_rate * gradients['conv']
+            self.weights['fc'] -= learning_rate * gradients['fc']
+
+            # Optional: Learning rate decay
+            learning_rate *= 0.95  # Decay learning rate by 5% every epoch
 
     @staticmethod
     def predict(images):
@@ -210,8 +257,10 @@ class TrainingGUI:
         architecture = [
             {"layer": "Input", "shape": "(64, 64, 3)"},
             {"layer": "Conv2D", "filters": 8, "kernel_size": "(3, 3)", "output_shape": "(62, 62, 8)"},
+            {"layer": "ReLU", "output_shape": "(62, 62, 8)"},
             {"layer": "Flatten", "output_shape": "(30752)"},
-            {"layer": "Dense", "units": 2, "output_shape": "(2)"}
+            {"layer": "Dense", "units": 2, "output_shape": "(2)"},
+            {"layer": "Softmax", "output_shape": "(2)"}
         ]
 
         x_start = 10
