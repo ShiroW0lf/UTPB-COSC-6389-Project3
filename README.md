@@ -1,22 +1,54 @@
 # UTPB-COSC-6389-Project3
-This repo contains the assignment and provided code base for Project 3 of the graduate Computational Biomimicry class.
+# CNN Training Visualization with Custom Implementation
 
-The goals of this project are:
-1) Understand how convolutional neural networks are constructed and used, and the particulars of their implementation.
+This project implements a Convolutional Neural Network (CNN) from scratch and provides a user-friendly graphical interface to visualize the training process and architecture. The CNN is designed for binary image classification tasks, such as distinguishing between cats and dogs.
 
-Description:
-Using the code from your Project 2, create an extension which implements convolutions in your networks.  This time, your goal is to create an image classifier network, which accepts single rectangular images as input and outputs which of the object classes the network believes the image depicts.  You are allowed to select "toy" problems for this, such as the famous handwritten numerical digit dataset (example available here: https://www.kaggle.com/datasets/jcprogjava/handwritten-digits-dataset-not-in-mnist).
+## Features
 
-This site (https://www.kaggle.com/datasets) seems to be a database of datasets that you will likely find useful for both projects 2 and 3.
+- **Custom CNN Implementation**: A convolutional neural network built entirely from scratch without using machine learning libraries like TensorFlow or PyTorch.
+- **Training Visualization**: Real-time plots of training loss and accuracy displayed during the training process.
+- **CNN Architecture Visualization**: A graphical representation of the CNN architecture, including layers and their shapes.
+- **Dynamic Updates**: Training progress, including epoch number, loss, and accuracy, dynamically updated in the GUI.
+- **Image Loader**: Load and preprocess images for training, with support for binary classification (e.g., cats vs. dogs).
 
-As with Projects 1 and 2, your application must generate the neural networks, display them on a canvas, and update them in real time as the weight values change.
+## CNN Architecture
 
-You are not allowed to make use of any libraries related to neural networks in the code for this project.  The implementation of the network construction, operation, forward and backward propagation, training, and testing must all be your own.
+The CNN implemented in this project consists of the following layers:
+1. **Input Layer**: Accepts images of size `(64, 64, 3)`.
+2. **Convolutional Layer**: Applies 8 filters of size `(3, 3)` with ReLU activation, resulting in an output shape of `(62, 62, 8)`.
+3. **Flatten Layer**: Flattens the output of the convolutional layer to a single vector of size `30752`.
+4. **Fully Connected Layer**: Dense layer with 2 neurons for binary classification.
+5. **Softmax Layer**: Outputs probabilities for the two classes.
 
-Grading criteria:
-1) If the code submitted via your pull request does not compile, the grade is zero.
-2) If the code crashes due to forseeable unhandled exceptions, the grade is zero.
-3) For full points, the code must correctly perform the relevant algorithms and display the network in real time, via the UI.
+## GUI Overview
 
-Deliverables:
-A Python application which provides a correct implementation of a neural network generation and training system and is capable of training an image classifier which has good accuracy for the problem set selected.
+### Layout
+- **Training Plot**: A real-time plot of the training loss, located on the left side of the window.
+- **Information Panel**: Displays the current epoch, loss, and accuracy during training, located on the right side.
+- **CNN Architecture Visualization**: A visual representation of the CNN layers and shapes, also on the right side.
+
+### Interactions
+- **Start Training**: A button to initiate the training process.
+- **Dynamic Updates**: The GUI updates in real-time as the training progresses, showing changes in loss, accuracy, and epoch count.
+
+![img.png](img.png)
+
+## How to Run
+
+1. **Prerequisites**:
+   - Python 3.8 or higher
+   - Required libraries: `numpy`, `tkinter`, `Pillow`, `matplotlib`
+
+   Install dependencies using:
+   ```bash
+   pip install numpy pillow matplotlib
+
+2. **UI Operation**:
+  - Click the "Start Training" button to begin training the CNN.
+  - Monitor the training progress and visualize the CNN architecture.
+
+### Future Enhancements
+    - Add support for validation data and metrics.
+    - Extend to multi-class classification.
+    - Implement additional CNN layers such as pooling and dropout.
+    - Add a "Pause" and "Resume" functionality for training.

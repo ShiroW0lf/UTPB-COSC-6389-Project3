@@ -245,7 +245,7 @@ class TrainingGUI:
         self.arch_label = tk.Label(self.info_frame, text="CNN Architecture", font=("Arial", 16, "bold"))
         self.arch_label.pack(pady=10)
 
-        self.arch_canvas = tk.Canvas(self.info_frame, width=400, height=300, bg="white")
+        self.arch_canvas = tk.Canvas(self.info_frame, width=500, height=700, bg="white")
         self.arch_canvas.pack(pady=10)
 
         # Draw the CNN architecture initially
@@ -304,7 +304,7 @@ class TrainingGUI:
         train_images, train_labels = load_images("data/train")
 
         # Train the model in a separate thread
-        threading.Thread(target=self.cnn_model.train_with_visualization, args=(train_images, train_labels, 10, 0.01, self.update_plot)).start()
+        threading.Thread(target=self.cnn_model.train_with_visualization, args=(train_images, train_labels, 20, 0.01, self.update_plot)).start()
 
     def run(self):
         """Start the Tkinter event loop."""
