@@ -9,16 +9,26 @@ from PIL import Image
 
 
 # Custom CNN Implementation
+import os
+import tkinter as tk
+from tkinter import ttk
+import threading
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+from PIL import Image
+
+
+# Custom CNN Implementation
 class CNNWithVisualization:
-    def __init__(self, gui_update_callback):
-        self.gui_update_callback = gui_update_callback
+    def __init__(self):
         self.weights = {}
         self.initialize_weights()
 
     def initialize_weights(self):
         """Initialize weights for the CNN layers."""
         print("Initializing weights...")
-        self.weights['conv'] = np.random.randn(3, 3, 3, 8)  # Conv layer weights
+        self.weights['conv'] = np.random.randn(3, 3, 3, 8) * np.sqrt(2 / 27)  # He initialization
         print(f"Conv layer weights initialized with shape: {self.weights['conv'].shape}")
 
         # Calculate the actual size of the flattened input after the conv layer
@@ -36,6 +46,10 @@ class CNNWithVisualization:
         """ReLU activation function."""
         return np.maximum(0, x)
 
+    def relu_derivative(self, x):
+        """Derivative of ReLU."""
+        return (x > 0).astype(float)
+
     def softmax(self, x):
         """Softmax activation function."""
         exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
@@ -43,16 +57,12 @@ class CNNWithVisualization:
 
     def forward_propagation(self, inputs):
         """Perform forward propagation."""
-        print("Performing forward propagation...")
-        conv_output = self.convolve(inputs, self.weights['conv'])
-        print(f"Conv layer output shape: {conv_output.shape}")
-        flattened = conv_output.reshape(conv_output.shape[0], -1)
-        print(f"Flattened output shape: {flattened.shape}")
-        fc_output = flattened.dot(self.weights['fc'])
-        print(f"Fully connected output shape: {fc_output.shape}")
-        return self.softmax(fc_output)
-        relu = lambda x: np.maximum(0, x)  # ReLU activation
-        conv_activated = relu(conv_output)
+        self.inputs = inputs
+        self.conv_output = self.convolve(inputs, self.weights['conv'])
+        self.flattened = self.conv_output.reshape(self.conv_output.shape[0], -1)
+        self.fc_output = self.flattened.dot(self.weights['fc'])
+        self.predictions = self.softmax(self.fc_output)
+        return self.predictions
 
     def convolve(self, inputs, filters):
         """Simulate convolution."""
@@ -76,7 +86,29 @@ class CNNWithVisualization:
         """Compute accuracy."""
         return np.mean(np.argmax(predictions, axis=1) == np.argmax(labels, axis=1))
 
-    def train_with_visualization(self, train_images, train_labels, epochs=10, learning_rate=0.01):
+    def backward_propagation(self, train_labels, learning_rate):
+        """Perform backward propagation and update weights."""
+        m = train_labels.shape[0]
+
+        # Fully connected layer gradient
+        d_fc_output = self.predictions - train_labels
+        d_fc_weights = self.flattened.T.dot(d_fc_output) / m
+        self.weights['fc'] -= learning_rate * d_fc_weights
+
+        # Gradient for the conv layer
+        d_flattened = d_fc_output.dot(self.weights['fc'].T).reshape(self.conv_output.shape)
+        d_conv_output = d_flattened * self.relu_derivative(self.conv_output)
+
+        d_conv_weights = np.zeros_like(self.weights['conv'])
+        for i in range(d_conv_output.shape[1]):
+            for j in range(d_conv_output.shape[2]):
+                region = self.inputs[:, i:i+3, j:j+3, :]
+                for k in range(d_conv_output.shape[3]):
+                    d_conv_weights[..., k] += np.tensordot(region, d_conv_output[:, i, j, k], axes=([0], [0])) / m
+
+        self.weights['conv'] -= learning_rate * d_conv_weights
+
+    def train_with_visualization(self, train_images, train_labels, epochs=10, learning_rate=0.01, gui_update_callback=None):
         """Train the CNN."""
         losses = []
         for epoch in range(1, epochs + 1):
@@ -85,10 +117,11 @@ class CNNWithVisualization:
             losses.append(loss)
             accuracy = self.compute_accuracy(predictions, train_labels)
             print(f"Epoch {epoch}: Loss={loss:.4f}, Accuracy={accuracy * 100:.2f}%")
-            self.gui_update_callback(epoch, loss, accuracy, losses)
+            if gui_update_callback:
+                gui_update_callback(epoch, loss, accuracy, losses)
 
-            # Simple gradient update (placeholder for backpropagation)
-            # This is where the backpropagation would be implemented
+            # Backpropagation and weight updates
+            self.backward_propagation(train_labels, learning_rate)
 
     @staticmethod
     def predict(images):
@@ -125,9 +158,6 @@ class TrainingGUI:
         self.root.geometry("1920x1080")  # Larger window
 
         self.cnn_model = cnn_model
-
-        # Pass the GUI's update callback to the CNN model
-        self.cnn_model.gui_update_callback = self.gui_update_callback
 
         # Left frame for loss plot
         self.plot_frame = tk.Frame(self.root)
@@ -206,47 +236,33 @@ class TrainingGUI:
             # Update y_start for the next layer
             y_start += layer_height + spacing
 
-    def update_architecture(self, current_epoch):
-        """Dynamically update the architecture during training."""
-        # Example: Highlight a specific layer during the current epoch
-        if current_epoch % 2 == 0:
-            self.arch_canvas.itemconfig(2, fill="lightgreen")  # Example: Update layer
-
-    def update_plot(self, epoch, loss_history):
-        """Update the loss plot."""
-        self.line.set_data(range(1, epoch + 1), loss_history)
-        self.ax.set_xlim(1, epoch)
-        self.ax.set_ylim(0, max(loss_history) * 1.1)
-        self.canvas.draw()
-
-    def update_info(self, epoch, loss, accuracy):
-        """Update epoch, loss, and accuracy labels."""
+    def update_plot(self, epoch, loss, accuracy, losses):
+        """Update the plot during training."""
         self.epoch_label.config(text=f"Epoch: {epoch}")
         self.loss_label.config(text=f"Loss: {loss:.4f}")
         self.accuracy_label.config(text=f"Accuracy: {accuracy * 100:.2f}%")
-        self.update_architecture(epoch)  # Update architecture
 
-    def gui_update_callback(self, epoch, loss, accuracy, losses):
-        """Callback for updating the GUI during training."""
-        self.update_plot(epoch, losses)
-        self.update_info(epoch, loss, accuracy)
+        # Update the plot with the new loss
+        self.line.set_xdata(range(1, epoch + 1))
+        self.line.set_ydata(losses)
+        self.ax.relim()
+        self.ax.autoscale_view()
+        self.canvas.draw()
 
     def start_training(self):
-        """Start training the CNN."""
-        self.start_button.config(state=tk.DISABLED)
+        """Start the training process."""
+        # Load images and labels
+        train_images, train_labels = load_images("data/train")
 
-        def train_model():
-            train_images, train_labels = load_images('data/train')
-            self.cnn_model.train_with_visualization(train_images, train_labels, epochs=10, learning_rate=0.01)
-            print("Training complete!")
-
-        threading.Thread(target=train_model).start()
+        # Train the model in a separate thread
+        threading.Thread(target=self.cnn_model.train_with_visualization, args=(train_images, train_labels, 10, 0.01, self.update_plot)).start()
 
     def run(self):
+        """Start the Tkinter event loop."""
         self.root.mainloop()
 
 
-# Instantiate and run
-cnn_model = CNNWithVisualization(gui_update_callback=None)  # Initialize with placeholder
-gui = TrainingGUI(cnn_model)  # Link the actual callback
+# Create the CNN model and GUI
+cnn_model = CNNWithVisualization()
+gui = TrainingGUI(cnn_model)
 gui.run()
