@@ -9,6 +9,17 @@ from PIL import Image
 
 
 # Custom CNN Implementation
+import os
+import tkinter as tk
+from tkinter import ttk
+import threading
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+from PIL import Image
+
+
+# Custom CNN Implementation
 class CNNWithVisualization:
     def __init__(self):
         self.weights = {}
@@ -30,10 +41,6 @@ class CNNWithVisualization:
         output_neurons = 2  # Binary classification
         self.weights['fc'] = np.random.randn(flattened_size, output_neurons) * np.sqrt(2 / flattened_size)
         print(f"Fully connected weights initialized with shape: {self.weights['fc'].shape}")
-        self.biases = {
-            'conv': np.zeros(8),  # One bias per filter
-            'fc': np.zeros(output_neurons)
-        }
 
     def relu(self, x):
         """ReLU activation function."""
@@ -61,8 +68,7 @@ class CNNWithVisualization:
         print(f"Flattened shape: {self.flattened.shape}")
 
         # Fully connected layer operation
-        self.fc_output = self.flattened.dot(self.weights['fc']) + self.biases['fc']
-
+        self.fc_output = self.flattened.dot(self.weights['fc'])
         print(f"Fully connected output shape: {self.fc_output.shape}")
 
         # Softmax activation for predictions
@@ -78,13 +84,10 @@ class CNNWithVisualization:
         output_height = height - filter_height + 1
         output_width = width - filter_width + 1
         conv_output = np.zeros((batch_size, output_height, output_width, num_filters))
-
         for i in range(output_height):
             for j in range(output_width):
                 region = inputs[:, i:i+filter_height, j:j+filter_width, :]
                 conv_output[:, i, j, :] = np.tensordot(region, filters, axes=([1, 2, 3], [0, 1, 2]))
-                conv_output[:, i, j, :] += self.biases['conv']
-
         return self.relu(conv_output)
 
     def compute_loss(self, predictions, labels):
@@ -103,25 +106,12 @@ class CNNWithVisualization:
         # Compute gradients for fully connected layer
         d_fc_output = predictions - labels  # Softmax derivative wrt loss
         d_fc_weights = self.flattened.T.dot(d_fc_output) / batch_size
-        d_fc_biases = np.sum(d_fc_output, axis=0) / batch_size
 
         # Compute gradients for convolutional layer
-        # d_flattened should be computed first before d_conv_output
         d_flattened = d_fc_output.dot(self.weights['fc'].T).reshape(self.conv_output.shape)
-
-        # Now calculate d_conv_output after reshaping d_flattened
         d_conv_output = d_flattened * self.relu_derivative(self.conv_output)
 
         d_conv_weights = np.zeros_like(self.weights['conv'])
-        d_conv_biases = np.sum(d_conv_output, axis=(0, 1, 2)) / batch_size  # Now this is after d_conv_output
-
-        # Update weights and biases
-        self.weights['conv'] -= learning_rate * d_conv_weights
-        self.biases['conv'] -= learning_rate * d_conv_biases
-        self.weights['fc'] -= learning_rate * d_fc_weights
-        self.biases['fc'] -= learning_rate * d_fc_biases
-
-        # Calculate the gradients for convolutional weights
         for i in range(d_conv_output.shape[1]):
             for j in range(d_conv_output.shape[2]):
                 region = self.inputs[:, i:i + 3, j:j + 3, :]
@@ -177,8 +167,8 @@ class CNNWithVisualization:
             self.weights['conv'] -= learning_rate * gradients['conv']
             self.weights['fc'] -= learning_rate * gradients['fc']
 
-            if epoch % 5 == 0:
-                learning_rate *= 0.9  # Reduce learning rate every 5 epochs
+            # Optional: Learning rate decay
+            learning_rate *= 0.95  # Decay learning rate by 5% every epoch
 
     @staticmethod
     def predict(images):
@@ -198,33 +188,43 @@ def load_images(directory, image_size=(64, 64)):
                 try:
                     # Open the image and ensure it's in RGB format
                     image = Image.open(filepath).convert('RGB').resize(image_size)
-
-                    # Apply data augmentation
-                    if np.random.rand() > 0.5:  # Random horizontal flip
-                        image = image.transpose(Image.FLIP_LEFT_RIGHT)
-
-                    if np.random.rand() > 0.5:  # Random rotation
-                        angle = np.random.randint(-15, 15)  # Rotate within a small range
-                        image = image.rotate(angle)
-
-                    # Normalize pixel values and append image
-                    images.append(np.array(image) / 255.0)
+                    images.append(np.array(image) / 255.0)  # Normalize pixel values
                     labels.append(label)
                 except Exception as e:
                     print(f"Error loading image {filepath}: {e}")
-
     images = np.array(images, dtype=np.float32)  # Ensure consistent shape and type
     labels = np.eye(2)[np.array(labels)]  # One-hot encoding for labels
     print(f"Loaded {len(images)} images.")
     return images, labels
 
 
+import tkinter as tk
+from tkinter import ttk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import threading
+import numpy as np
+
+
+class CNNWithVisualization:
+    def __init__(self):
+        self.layers = [
+            {"type": "Input", "shape": (64, 64, 3)},
+            {"type": "Conv2D", "filters": 8, "kernel_size": "(3, 3)", "output_shape": "(62, 62, 8)"},
+            {"type": "ReLU", "output_shape": "(62, 62, 8)"},
+            {"type": "MaxPooling", "pool_size": "(2, 2)", "output_shape": "(31, 31, 8)"},
+            {"type": "Flatten", "output_shape": "(30752)"},
+            {"type": "Dense", "units": 2, "output_shape": "(2)"},
+            {"type": "Softmax", "output_shape": "(2)"}
+        ]
+        self.weights = [True] * len(self.layers)  # Placeholder for weight update status
+
 
 class TrainingGUI:
     def __init__(self, cnn_model):
         self.root = tk.Tk()
         self.root.title("CNN Training Visualization")
-        self.root.geometry("1920x1080")  # Larger window
+        self.root.geometry("1920x1080")
 
         self.cnn_model = cnn_model
 
@@ -267,69 +267,92 @@ class TrainingGUI:
         self.arch_label = tk.Label(self.info_frame, text="CNN Architecture", font=("Arial", 16, "bold"))
         self.arch_label.pack(pady=10)
 
-        self.arch_canvas = tk.Canvas(self.info_frame, width=500, height=700, bg="white")
+        self.arch_canvas = tk.Canvas(self.info_frame, width=600, height=700, bg="white")
         self.arch_canvas.pack(pady=10)
 
         # Draw the CNN architecture initially
         self.draw_cnn_architecture()
 
-    def draw_cnn_architecture(self):
+    def draw_cnn_architecture(self, weights_status=None, activations=None):
         """Visualize the CNN architecture dynamically."""
         self.arch_canvas.delete("all")  # Clear existing drawings
-        architecture = [
-            {"layer": "Input", "shape": "(64, 64, 3)"},
-            {"layer": "Conv2D", "filters": 8, "kernel_size": "(3, 3)", "output_shape": "(62, 62, 8)"},
-            {"layer": "ReLU", "output_shape": "(62, 62, 8)"},
-            {"layer": "Flatten", "output_shape": "(30752)"},
-            {"layer": "Dense", "units": 2, "output_shape": "(2)"},
-            {"layer": "Softmax", "output_shape": "(2)"}
-        ]
+        layers = self.cnn_model.layers
+        x_start = 50
+        y_start = 50
+        layer_width = 400
+        layer_height = 60
+        spacing = 50
 
-        x_start = 10
-        y_start = 10
-        layer_width = 300
-        layer_height = 50
-        spacing = 20
-
-        for idx, layer in enumerate(architecture):
-            layer_name = layer["layer"]
-            shape = layer.get("shape", layer.get("output_shape", ""))
+        for idx, layer in enumerate(layers):
+            layer_name = layer["type"]
+            shape = layer.get("output_shape", layer.get("shape", ""))
             details = f"{layer_name}\n{shape}"
 
+            # Set color based on weights_status
+            color = "lightblue"
+            if weights_status and idx < len(weights_status):
+                color = "lightgreen" if weights_status[idx] else "lightcoral"
+
             # Draw rectangle
-            self.arch_canvas.create_rectangle(
-                x_start, y_start, x_start + layer_width, y_start + layer_height, fill="lightblue", outline="black"
-            )
-            # Add text inside rectangle
+            x1, y1 = x_start, y_start + idx * (layer_height + spacing)
+            x2, y2 = x1 + layer_width, y1 + layer_height
+            self.arch_canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="black")
+
+            # Add layer details
             self.arch_canvas.create_text(
-                x_start + layer_width / 2, y_start + layer_height / 2, text=details, font=("Arial", 12)
+                (x1 + x2) / 2, (y1 + y2) / 2, text=details, font=("Arial", 12, "bold")
             )
-            # Update y_start for the next layer
-            y_start += layer_height + spacing
 
-    def update_plot(self, epoch, loss, accuracy, losses):
-        """Update the plot during training."""
-        self.epoch_label.config(text=f"Epoch: {epoch}")
-        self.loss_label.config(text=f"Loss: {loss:.4f}")
-        self.accuracy_label.config(text=f"Accuracy: {accuracy * 100:.2f}%")
+            # Add activation outputs
+            if activations and idx < len(activations):
+                activation_text = f"Activations: {activations[idx]}"
+                self.arch_canvas.create_text(
+                    (x1 + x2) / 2, y2 + 15, text=activation_text, font=("Arial", 10), fill="gray"
+                )
 
-        # Update the plot with the new loss
-        self.line.set_xdata(range(1, epoch + 1))
-        self.line.set_ydata(losses)
-        self.ax.relim()
-        self.ax.autoscale_view()
-        self.canvas.draw()
+            # Draw connection lines
+            if idx < len(layers) - 1:
+                next_x, next_y = x1 + layer_width / 2, y2 + spacing / 2
+                self.arch_canvas.create_line(
+                    (x1 + x2) / 2, y2, next_x, next_y, arrow=tk.LAST, fill="black", width=2
+                )
 
     def start_training(self):
         """Start the training process."""
-        # Load images and labels
-        train_images, train_labels = load_images("data/train")
+        def training_thread():
+            # Simulate training process
+            epochs = 10
+            losses = []
 
-        # Train the model in a separate thread
-        threading.Thread(target=self.cnn_model.train_with_visualization, args=(train_images, train_labels, 20, 0.01, self.update_plot)).start()
+            for epoch in range(1, epochs + 1):
+                # Simulated loss and accuracy
+                loss = np.random.uniform(0.1, 1.0)
+                accuracy = np.random.uniform(0.7, 1.0)
+                losses.append(loss)
+
+                # Simulated activations and weight updates
+                weights_status = [bool(np.random.choice([0, 1])) for _ in self.cnn_model.layers]
+                activations = [f"{np.random.randint(50, 500)}" for _ in self.cnn_model.layers]
+
+                # Update the UI
+                self.epoch_label.config(text=f"Epoch: {epoch}")
+                self.loss_label.config(text=f"Loss: {loss:.4f}")
+                self.accuracy_label.config(text=f"Accuracy: {accuracy * 100:.2f}%")
+                self.line.set_data(range(1, len(losses) + 1), losses)
+                self.ax.relim()
+                self.ax.autoscale_view()
+                self.canvas.draw()
+
+                # Update architecture visualization
+                self.draw_cnn_architecture(weights_status, activations)
+
+                # Simulate training time
+                self.root.update()
+                self.root.after(1000)
+
+        threading.Thread(target=training_thread).start()
 
     def run(self):
-        """Start the Tkinter event loop."""
         self.root.mainloop()
 
 

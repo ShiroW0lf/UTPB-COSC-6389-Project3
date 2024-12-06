@@ -9,17 +9,6 @@ from PIL import Image
 
 
 # Custom CNN Implementation
-import os
-import tkinter as tk
-from tkinter import ttk
-import threading
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
-from PIL import Image
-
-
-# Custom CNN Implementation
 class CNNWithVisualization:
     def __init__(self):
         self.weights = {}
@@ -41,6 +30,10 @@ class CNNWithVisualization:
         output_neurons = 2  # Binary classification
         self.weights['fc'] = np.random.randn(flattened_size, output_neurons) * np.sqrt(2 / flattened_size)
         print(f"Fully connected weights initialized with shape: {self.weights['fc'].shape}")
+        self.biases = {
+            'conv': np.zeros(8),  # One bias per filter
+            'fc': np.zeros(output_neurons)
+        }
 
     def relu(self, x):
         """ReLU activation function."""
@@ -68,7 +61,8 @@ class CNNWithVisualization:
         print(f"Flattened shape: {self.flattened.shape}")
 
         # Fully connected layer operation
-        self.fc_output = self.flattened.dot(self.weights['fc'])
+        self.fc_output = self.flattened.dot(self.weights['fc']) + self.biases['fc']
+
         print(f"Fully connected output shape: {self.fc_output.shape}")
 
         # Softmax activation for predictions
@@ -84,10 +78,13 @@ class CNNWithVisualization:
         output_height = height - filter_height + 1
         output_width = width - filter_width + 1
         conv_output = np.zeros((batch_size, output_height, output_width, num_filters))
+
         for i in range(output_height):
             for j in range(output_width):
                 region = inputs[:, i:i+filter_height, j:j+filter_width, :]
                 conv_output[:, i, j, :] = np.tensordot(region, filters, axes=([1, 2, 3], [0, 1, 2]))
+                conv_output[:, i, j, :] += self.biases['conv']
+
         return self.relu(conv_output)
 
     def compute_loss(self, predictions, labels):
@@ -106,12 +103,25 @@ class CNNWithVisualization:
         # Compute gradients for fully connected layer
         d_fc_output = predictions - labels  # Softmax derivative wrt loss
         d_fc_weights = self.flattened.T.dot(d_fc_output) / batch_size
+        d_fc_biases = np.sum(d_fc_output, axis=0) / batch_size
 
         # Compute gradients for convolutional layer
+        # d_flattened should be computed first before d_conv_output
         d_flattened = d_fc_output.dot(self.weights['fc'].T).reshape(self.conv_output.shape)
+
+        # Now calculate d_conv_output after reshaping d_flattened
         d_conv_output = d_flattened * self.relu_derivative(self.conv_output)
 
         d_conv_weights = np.zeros_like(self.weights['conv'])
+        d_conv_biases = np.sum(d_conv_output, axis=(0, 1, 2)) / batch_size  # Now this is after d_conv_output
+
+        # Update weights and biases
+        self.weights['conv'] -= learning_rate * d_conv_weights
+        self.biases['conv'] -= learning_rate * d_conv_biases
+        self.weights['fc'] -= learning_rate * d_fc_weights
+        self.biases['fc'] -= learning_rate * d_fc_biases
+
+        # Calculate the gradients for convolutional weights
         for i in range(d_conv_output.shape[1]):
             for j in range(d_conv_output.shape[2]):
                 region = self.inputs[:, i:i + 3, j:j + 3, :]
@@ -167,8 +177,8 @@ class CNNWithVisualization:
             self.weights['conv'] -= learning_rate * gradients['conv']
             self.weights['fc'] -= learning_rate * gradients['fc']
 
-            # Optional: Learning rate decay
-            learning_rate *= 0.95  # Decay learning rate by 5% every epoch
+            if epoch % 5 == 0:
+                learning_rate *= 0.9  # Reduce learning rate every 5 epochs
 
     @staticmethod
     def predict(images):
@@ -188,14 +198,26 @@ def load_images(directory, image_size=(64, 64)):
                 try:
                     # Open the image and ensure it's in RGB format
                     image = Image.open(filepath).convert('RGB').resize(image_size)
-                    images.append(np.array(image) / 255.0)  # Normalize pixel values
+
+                    # Apply data augmentation
+                    if np.random.rand() > 0.5:  # Random horizontal flip
+                        image = image.transpose(Image.FLIP_LEFT_RIGHT)
+
+                    if np.random.rand() > 0.5:  # Random rotation
+                        angle = np.random.randint(-15, 15)  # Rotate within a small range
+                        image = image.rotate(angle)
+
+                    # Normalize pixel values and append image
+                    images.append(np.array(image) / 255.0)
                     labels.append(label)
                 except Exception as e:
                     print(f"Error loading image {filepath}: {e}")
+
     images = np.array(images, dtype=np.float32)  # Ensure consistent shape and type
     labels = np.eye(2)[np.array(labels)]  # One-hot encoding for labels
     print(f"Loaded {len(images)} images.")
     return images, labels
+
 
 
 class TrainingGUI:
