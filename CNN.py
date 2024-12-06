@@ -142,7 +142,7 @@ class CNNWithVisualization:
 
         return {"conv": dL_dconv, "fc": dL_dW_fc}
 
-    def train_with_visualization(self, train_images, train_labels, epochs=10, learning_rate=0.01,
+    def train_with_visualization(self, train_images, train_labels, epochs=20, learning_rate=0.01,
                                  gui_update_callback=None):
         """Train the CNN."""
         losses = []
@@ -321,7 +321,7 @@ class TrainingGUI:
         """Start the training process."""
         def training_thread():
             # Simulate training process
-            epochs = 10
+            epochs = 20
             losses = []
 
             for epoch in range(1, epochs + 1):

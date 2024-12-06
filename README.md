@@ -14,11 +14,23 @@ This project implements a Convolutional Neural Network (CNN) from scratch and pr
 ## CNN Architecture
 
 The CNN implemented in this project consists of the following layers:
-1. **Input Layer**: Accepts images of size `(64, 64, 3)`.
-2. **Convolutional Layer**: Applies 8 filters of size `(3, 3)` with ReLU activation, resulting in an output shape of `(62, 62, 8)`.
-3. **Flatten Layer**: Flattens the output of the convolutional layer to a single vector of size `30752`.
-4. **Fully Connected Layer**: Dense layer with 2 neurons for binary classification.
-5. **Softmax Layer**: Outputs probabilities for the two classes.
+
+1. **Input Layer**: Accepts images of size `(128, 128, 3)`.
+2. **Convolutional Layer (Conv2D)**: Applies 8 filters of size `(3, 3)` with ReLU activation, resulting in an output shape of `(126, 126, 8)`.
+3. **Max Pooling Layer**: Reduces the spatial dimensions by applying a pool size of `(2, 2)`, resulting in an output shape of `(63, 63, 8)`.
+4. **Fully Connected Layer**: Flattens the output to a vector of size `30752`, followed by a dense layer with 2 neurons for binary classification.
+5. **Output Layer**: Outputs probabilities for the two classes using the Softmax activation function.
+
+**CNN Architecture Visualization**
+   - The architecture of the CNN is dynamically displayed on the right side of the UI. 
+   - Each layer is represented as a rectangular box, with the following information displayed inside:
+     - **Layer Type**: Shows the type of the layer (e.g., Input, Convolutional, ReLU, etc.).
+     - **Shape/Output Shape**: Displays the dimensions of the layer's output (e.g., `(128, 128, 3)` for the input layer or `(126, 126, 8)` for the convolutional layer).
+   - The UI also dynamically updates the layer colors based on the training progress. 
+     - **Green**: Indicates a layer with updated weights.
+     - **Red**: Indicates a layer with inactive or untrained weights.
+   - Optionally, activation outputs can be visualized under each layer, showing the number of activations in each layer during training.
+
 
 ## GUI Overview
 
